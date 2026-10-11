@@ -59,7 +59,7 @@ def generate_ai_tips(matches):
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
             json={
-                "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
+                "model": os.environ.get("GROQ_MODEL") or "llama-3.3-70b-versatile",
                 "messages": [
                     {"role": "system", "content": "Jsi opatrný analytik fotbalových zápasů."},
                     {"role": "user", "content": prompt},
@@ -69,6 +69,8 @@ def generate_ai_tips(matches):
             },
             timeout=30,
         )
+        if response.status_code >= 400:
+            print(f"Odpověď Groq API ({response.status_code}): {response.text[:1000]}")
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
         result = json.loads(content)
