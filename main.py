@@ -123,7 +123,6 @@ def format_matches_message(matches, tips=None):
         msg += "-----------------------------------\n"
         count += 1
 
-    msg += tips.get(index)
     return msg + "⚠️ Tipy jsou nejisté odhady, ne garance výhry."
 
 def send_discord_message(message):
@@ -149,6 +148,11 @@ if __name__ == "__main__":
     
     print(f"Nalezeno zápasů: {len(matches)}")
     tips = generate_ai_tips(matches)
+    print("AI model vrátil:")
+    print(json.dumps(tips, ensure_ascii=False, indent=2))
     message = format_matches_message(matches, tips)
-    
-    send_discord_message(message)
+
+    if os.environ.get("SKIP_DISCORD", "").lower() == "true":
+        print("Testovací režim: zpráva na Discord nebyla odeslána.")
+    else:
+        send_discord_message(message)
