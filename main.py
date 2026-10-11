@@ -30,9 +30,9 @@ def generate_ai_tips(matches):
     if not matches:
         return {}
 
-    api_key = os.environ.get("OPENAI_API_KEY")
+    api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
-        print("Chybí OpenAI API klíč v proměnné prostředí OPENAI_API_KEY.")
+        print("Chybí Groq API klíč v proměnné prostředí GROQ_API_KEY.")
         return {}
 
     fixtures = [
@@ -56,10 +56,10 @@ def generate_ai_tips(matches):
 
     try:
         response = requests.post(
-            "https://api.openai.com/v1/chat/completions",
+            "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
             json={
-                "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+                "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
                 "messages": [
                     {"role": "system", "content": "Jsi opatrný analytik fotbalových zápasů."},
                     {"role": "user", "content": prompt},
