@@ -59,7 +59,7 @@ def generate_ai_tips(matches):
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
             json={
-                "model": os.environ.get("GROQ_MODEL") or "llama-3.3-70b-versatile",
+                "model": os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b",
                 "messages": [
                     {"role": "system", "content": "Jsi opatrný analytik fotbalových zápasů."},
                     {"role": "user", "content": prompt},
