@@ -116,10 +116,8 @@ def format_matches_message(matches, tips=None):
         msg += f"📅 Datum: {match_date}\n"
         msg += f"⏰ Čas: {match_time} UTC\n"
         tip = tips.get(index)
-        if tip:
-            msg += f"💡 AI tip (jistota: {tip['confidence']}): {tip['pick']} - {tip['reason']}\n"
-        else:
-            msg += "💡 AI tip: nyní nedostupný.\n"
+        msg += f"💡 AI tip (jistota: {tip['confidence']}): {tip['pick']} - {tip['reason']}\n"
+        msg += "💡 AI tip: nyní nedostupný.\n"
         msg += "-----------------------------------\n"
         count += 1
 
