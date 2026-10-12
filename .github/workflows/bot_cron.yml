@@ -2,14 +2,7 @@ name: Football AI Bot
 
 on:
   schedule:
-    - cron: '0 8 * * *' # Spustí se každý den v 8:00 ráno UTC
-  workflow_dispatch:
-    inputs:
-      test_only:
-        description: "Testovat tipy bez odeslání na Discord"
-        type: boolean
-        required: false
-        default: true
+    - cron: '0 19 * * *'
 
 jobs:
   run-bot:
@@ -34,6 +27,5 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY || vars.GROQ_API_KEY }}
-          SKIP_DISCORD: ${{ github.event_name == 'workflow_dispatch' && inputs.test_only }}
         run: |
           python main.py
