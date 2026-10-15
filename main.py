@@ -8,8 +8,6 @@ MATCH_LIMIT = 10
 STANDINGS_LIMIT = 5
 
 def fetch_football_matches():
-    # Použijeme bezplatné API z football-data.org (např. Premier League nebo jiné dostupné ligy)
-    # Zde stahujeme aktuální zápasy
     url = "https://api.football-data.org/v4/matches"
     api_key = os.environ.get("FOOTBALL_DATA_API_KEY")
     
@@ -27,6 +25,27 @@ def fetch_football_matches():
             return []
     except Exception as e:
         print(f"Výjimka při komunikaci s API: {e}")
+        return []
+
+def fetch_competition_matches(competition_code, match_date):
+    url = f"https://api.football-data.org/v4/competitions/{competition_code}/matches"
+    api_key = os.environ.get("FOOTBALL_DATA_API_KEY")
+
+    if not api_key:
+        print("Chybí football-data.org API klíč v proměnné prostředí FOOTBALL_DATA_API_KEY.")
+        return []
+
+    try:
+        response = requests.get(
+            url,
+            headers={"X-Auth-Token": api_key},
+            params={"dateFrom": match_date, "dateTo": match_date},
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.json().get("matches", [])
+    except (requests.RequestException, ValueError, TypeError) as e:
+        print(f"Zápasy soutěže {competition_code} nejsou dostupné: {e}")
         return []
 
 def fetch_competition_standings(competition_id, api_key):
@@ -211,7 +230,7 @@ def format_matches_message(matches, tips=None):
         msg += "-----------------------------------\n"
         count += 1
 
-    return msg + "⚠️ Tipy jsou nejisté odhady, ne garance výhry."
+    return msg
 
 def send_discord_message(message):
     webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
