@@ -39,25 +39,24 @@ def fetch_competition_standings(competition_id, api_key):
             timeout=20,
         )
         response.raise_for_status()
-        standings = response.json().get("standings", [])
-        table = next(
-            (item.get("table", []) for item in standings if item.get("type") == "TOTAL"),
-            [],
-        )
-        return {
-            row["team"]["id"]: {
-                "position": row.get("position"),
-                "form": row.get("form"),
-                "played": row.get("playedGames"),
-                "points": row.get("points"),
-                "goals_for": row.get("goalsFor"),
-                "goals_against": row.get("goalsAgainst"),
-            }
-            for row in table
-            if row.get("team", {}).get("id") is not None
-        }
+        return response.json()
     except (requests.RequestException, ValueError, KeyError, TypeError) as e:
         print(f"Tabulka soutěže {competition_id} není dostupná: {e}")
+        return {}
+
+def fetch_match_head2head(match_id, api_key):
+    url = f"https://api.football-data.org/v4/matches/{match_id}/head2head?limit=12"
+
+    try:
+        response = requests.get(
+            url,
+            headers={"X-Auth-Token": api_key},
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.json()
+    except (requests.RequestException, ValueError, KeyError, TypeError) as e:
+        print(f"Vzájemné zápasy {match_id} nejsou dostupné: {e}")
         return {}
 
 def generate_ai_tips(matches):
@@ -69,43 +68,61 @@ def generate_ai_tips(matches):
         print("Chybí Groq API klíč v proměnné prostředí GROQ_API_KEY.")
         return {}
 
+    football_data_api_key = os.environ.get("FOOTBALL_DATA_API_KEY")
     selected_matches = matches[:MATCH_LIMIT]
     standings_by_competition = {}
-    for match in selected_matches:
-        competition_id = match.get("competition", {}).get("id")
-        if (
-            competition_id is not None
-            and competition_id not in standings_by_competition
-            and len(standings_by_competition) < STANDINGS_LIMIT
-        ):
-            standings_by_competition[competition_id] = fetch_competition_standings(
-                competition_id,
-                api_key,
-            )
+    head2head_by_match = {}
+    if football_data_api_key:
+        for match in selected_matches:
+            competition_id = match.get("competition", {}).get("id")
+            if (
+                competition_id is not None
+                and competition_id not in standings_by_competition
+                and len(standings_by_competition) < STANDINGS_LIMIT
+            ):
+                standings_by_competition[competition_id] = fetch_competition_standings(
+                    competition_id,
+                    football_data_api_key,
+                )
 
-    fixtures = []
-    for index, match in enumerate(selected_matches):
-        competition_id = match.get("competition", {}).get("id")
-        standings = standings_by_competition.get(competition_id, {})
-        home_team = match["homeTeam"]
-        away_team = match["awayTeam"]
-        fixtures.append({
-            "match_index": index,
-            "competition": match["competition"]["name"],
-            "home_team": home_team["name"],
-            "away_team": away_team["name"],
-            "utc_date": match["utcDate"],
-            "home_stats": standings.get(home_team.get("id")),
-            "away_stats": standings.get(away_team.get("id")),
-        })
+            match_id = match.get("id")
+            if match_id is not None:
+                head2head_by_match[match_id] = fetch_match_head2head(
+                    match_id,
+                    football_data_api_key,
+                )
+
+    api_data = {
+        "matches": [
+            {"match_index": index, "data": match}
+            for index, match in enumerate(selected_matches)
+        ],
+        "standings_by_competition": {
+            str(competition_id): data
+            for competition_id, data in standings_by_competition.items()
+        },
+        "head2head_by_match": {
+            str(match_id): data
+            for match_id, data in head2head_by_match.items()
+        },
+    }
     prompt = (
-        "Navrhni opatrný, stručný sázkový tip pro každý uvedený fotbalový zápas. "
-        "Využij přiloženou formu a statistiky z tabulky, pokud jsou dostupné. "
-        "Nevymýšlej chybějící formu, zranění ani kurzy. Pokud jsou podklady omezené, "
-        "výslovně uveď nízkou jistotu. "
-        "Nezaručuj výhru ani nedoporučuj výši sázky. Vrať pouze JSON objekt s polem tips; "
-        "každá položka musí mít match_index, pick, confidence (nízká/střední) a krátké reason.\n"
-        f"Zápasy: {json.dumps(fixtures, ensure_ascii=False)}"
+        "Pro každý uvedený zápas připrav věcnou a opatrnou sázkovou analýzu. "
+        "Vyber jeden konkrétní hlavní tip a uveď přesně sázkový trh i výběr "
+        "(např. 1X2 – domácí výhra, dvojitá šance – 1X, počet gólů – méně než 3,5). "
+        "Vysvětli, které dodané statistiky tip podporují, a uveď nejdůležitější riziko "
+        "nebo důvod, proč tip nemusí vyjít. Přidej nejvýše jednu alternativu, jen pokud "
+        "pro ni data dávají smysl. Využij formu, tabulku a vzájemné zápasy, jsou-li dostupné; "
+        "H2H ber jen jako doplňující kontext. Nevymýšlej zranění, kurzy ani statistiky. "
+        "Bez kurzů neposuzuj hodnotu sázky. Pokud podklady nestačí na rozumný tip, "
+        "doporuč bez sázky a vysvětli proč. Jistota může být pouze nízká nebo střední; "
+        "vysokou jistotu nikdy neuváděj. Neslibuj výhru a nedoporučuj výši vkladu. "
+        "Vrať pouze JSON objekt s polem tips. Každá položka musí mít match_index, market, "
+        "pick, confidence, reason, risk a alternative. U tipu bez sázky nastav market na "
+        "'Bez sázky', pick na 'Žádný tip' a alternative na prázdný řetězec.\n"
+        "Následující JSON obsahuje úplná data vrácená dostupnými football-data.org endpointy. "
+        "Využij všechny relevantní informace, ale žádné hodnoty nedoplňuj ani nevymýšlej.\n"
+        f"Data API: {json.dumps(api_data, ensure_ascii=False, separators=(',', ':'))}"
     )
 
     try:
@@ -131,15 +148,21 @@ def generate_ai_tips(matches):
         tips = {}
         for tip in result.get("tips", []):
             index = tip.get("match_index")
-            if not isinstance(index, int) or not 0 <= index < len(fixtures):
+            if not isinstance(index, int) or not 0 <= index < len(selected_matches):
                 continue
+            market = " ".join(str(tip.get("market", "")).split())[:80]
             pick = " ".join(str(tip.get("pick", "")).split())[:100]
-            reason = " ".join(str(tip.get("reason", "")).split())[:140]
+            reason = " ".join(str(tip.get("reason", "")).split())[:400]
+            risk = " ".join(str(tip.get("risk", "")).split())[:300]
+            alternative = " ".join(str(tip.get("alternative", "")).split())[:140]
             confidence = tip.get("confidence", "nízká")
-            if pick:
+            if market and pick:
                 tips[index] = {
+                    "market": market,
                     "pick": pick,
                     "reason": reason,
+                    "risk": risk,
+                    "alternative": alternative,
                     "confidence": confidence if confidence in ("nízká", "střední") else "nízká",
                 }
         return tips
@@ -172,7 +195,17 @@ def format_matches_message(matches, tips=None):
         msg += f"⏰ Čas: {match_time} UTC\n"
         tip = tips.get(index)
         if tip:
-            msg += f"💡 AI tip (jistota: {tip['confidence']}): {tip['pick']} - {tip['reason']}\n"
+            msg += f"💡 **Hlavní tip (jistota: {tip['confidence']})**\n"
+            if tip["market"] == "Bez sázky":
+                msg += "🎯 Bez sázky: podklady nestačí na rozumný tip.\n"
+            else:
+                msg += f"🎯 Trh: {tip['market']} | Výběr: {tip['pick']}\n"
+            if tip["reason"]:
+                msg += f"📊 Analýza: {tip['reason']}\n"
+            if tip["risk"]:
+                msg += f"⚠️ Riziko: {tip['risk']}\n"
+            if tip["alternative"]:
+                msg += f"↪ Alternativa: {tip['alternative']}\n"
         else:
             msg += "💡 AI tip: nyní nedostupný.\n"
         msg += "-----------------------------------\n"
