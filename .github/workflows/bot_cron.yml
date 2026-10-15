@@ -2,28 +2,41 @@ name: Football AI Bot
 
 on:
   schedule:
-    - cron: '0 19 * * *'
+    - cron: '0 23,0 * * *'
   workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     steps:
+      - name: Check 01:00 Europe/Prague schedule
+        id: local-time
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$(TZ=Europe/Prague date +'%H')" = "01" ]; then
+            echo "run_bot=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_bot=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout repository
+        if: steps.local-time.outputs.run_bot == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python
+        if: steps.local-time.outputs.run_bot == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
 
       - name: Install dependencies
+        if: steps.local-time.outputs.run_bot == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Run script
+        if: steps.local-time.outputs.run_bot == 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
