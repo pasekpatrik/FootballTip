@@ -3,7 +3,12 @@ import os
 
 import requests
 
-from src.core.constants import HEAD2HEAD_LIMIT, MATCH_LIMIT, STANDINGS_LIMIT
+from src.core.constants import (
+    HEAD2HEAD_LIMIT,
+    MATCH_BATCH_SIZE,
+    STANDINGS_LIMIT,
+    TOP_TIPS_LIMIT,
+)
 from src.features.data.football_data import fetch_competition_standings, fetch_match_head2head
 from src.features.prompts.football_tips import build_tips_prompt
 
@@ -77,63 +82,64 @@ def _compact_head2head(data):
     return compact_matches
 
 
-def generate_ai_tips(matches):
-    if not matches:
-        return {}
-
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        print("Chybí Groq API klíč v proměnné prostředí GROQ_API_KEY.")
-        return {}
-
-    football_data_api_key = os.environ.get("FOOTBALL_DATA_API_KEY")
-    selected_matches = matches[:MATCH_LIMIT]
+def _fetch_supporting_data(matches, api_key):
     standings_by_competition = {}
     head2head_by_match = {}
-    if football_data_api_key:
-        for match in selected_matches:
-            competition_id = match.get("competition", {}).get("id")
-            if (
-                competition_id is not None
-                and competition_id not in standings_by_competition
-                and len(standings_by_competition) < STANDINGS_LIMIT
-            ):
-                standings_by_competition[competition_id] = fetch_competition_standings(
-                    competition_id,
-                    football_data_api_key,
-                )
+    for match in matches:
+        competition_id = (match.get("competition") or {}).get("id")
+        if (
+            competition_id is not None
+            and competition_id not in standings_by_competition
+            and len(standings_by_competition) < STANDINGS_LIMIT
+        ):
+            standings_by_competition[competition_id] = fetch_competition_standings(
+                competition_id,
+                api_key,
+            )
 
-            match_id = match.get("id")
-            if match_id is not None and len(head2head_by_match) < HEAD2HEAD_LIMIT:
-                head2head_by_match[match_id] = fetch_match_head2head(
-                    match_id,
-                    football_data_api_key,
-                )
+        match_id = match.get("id")
+        if match_id is not None and len(head2head_by_match) < HEAD2HEAD_LIMIT:
+            head2head_by_match[match_id] = fetch_match_head2head(match_id, api_key)
 
-    api_data = {
-        "matches": [
-            _compact_match(index, match)
-            for index, match in enumerate(selected_matches)
-        ],
+    return standings_by_competition, head2head_by_match
+
+
+def _build_batch_data(batch_matches, start_index, standings_by_competition, head2head_by_match):
+    team_names = set()
+    competition_ids = set()
+    match_ids = set()
+    compact_matches = []
+
+    for offset, match in enumerate(batch_matches):
+        home_name = (match.get("homeTeam") or {}).get("name")
+        away_name = (match.get("awayTeam") or {}).get("name")
+        team_names.update(name for name in (home_name, away_name) if name)
+        competition_id = (match.get("competition") or {}).get("id")
+        match_id = match.get("id")
+        if competition_id is not None:
+            competition_ids.add(competition_id)
+        if match_id is not None:
+            match_ids.add(match_id)
+        compact_matches.append(_compact_match(start_index + offset, match))
+
+    return {
+        "matches": compact_matches,
         "standings_by_competition": {
             str(competition_id): _compact_standings(
-                data,
-                {
-                    (match.get("homeTeam") or {}).get("name")
-                    for match in selected_matches
-                }
-                | {
-                    (match.get("awayTeam") or {}).get("name")
-                    for match in selected_matches
-                },
+                standings_by_competition[competition_id], team_names
             )
-            for competition_id, data in standings_by_competition.items()
+            for competition_id in competition_ids
+            if competition_id in standings_by_competition
         },
         "head2head_by_match": {
-            str(match_id): _compact_head2head(data)
-            for match_id, data in head2head_by_match.items()
+            str(match_id): _compact_head2head(head2head_by_match[match_id])
+            for match_id in match_ids
+            if match_id in head2head_by_match
         },
     }
+
+
+def _request_batch_tips(api_data, api_key, valid_indexes):
     prompt = build_tips_prompt(api_data)
 
     try:
@@ -160,18 +166,23 @@ def generate_ai_tips(matches):
         tips = {}
         for tip in result.get("tips", []):
             index = tip.get("match_index")
-            if not isinstance(index, int) or not 0 <= index < len(selected_matches):
+            if not isinstance(index, int) or index not in valid_indexes:
                 continue
             market = " ".join(str(tip.get("market", "")).split())[:80]
             pick = " ".join(str(tip.get("pick", "")).split())[:100]
             reason = " ".join(str(tip.get("reason", "")).split())[:400]
             risk = " ".join(str(tip.get("risk", "")).split())[:300]
             alternative = " ".join(str(tip.get("alternative", "")).split())[:140]
+            probability = tip.get("probability")
+            if not isinstance(probability, (int, float)) or isinstance(probability, bool):
+                continue
+            probability = max(0, min(100, round(probability)))
             confidence = tip.get("confidence", "nízká")
-            if market and pick:
+            if market and pick and market.casefold() != "bez sázky":
                 tips[index] = {
                     "market": market,
                     "pick": pick,
+                    "probability": probability,
                     "reason": reason,
                     "risk": risk,
                     "alternative": alternative,
@@ -181,3 +192,40 @@ def generate_ai_tips(matches):
     except (requests.RequestException, ValueError, KeyError, IndexError, TypeError) as error:
         print(f"Chyba při generování AI tipů: {error}")
         return {}
+
+
+def generate_ai_tips(matches):
+    if not matches:
+        return {}
+
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        print("Chybí Groq API klíč v proměnné prostředí GROQ_API_KEY.")
+        return {}
+
+    football_data_api_key = os.environ.get("FOOTBALL_DATA_API_KEY")
+    standings_by_competition = {}
+    head2head_by_match = {}
+    if football_data_api_key:
+        standings_by_competition, head2head_by_match = _fetch_supporting_data(
+            matches,
+            football_data_api_key,
+        )
+
+    ranked_tips = {}
+    for start_index in range(0, len(matches), MATCH_BATCH_SIZE):
+        batch_matches = matches[start_index : start_index + MATCH_BATCH_SIZE]
+        batch_data = _build_batch_data(
+            batch_matches,
+            start_index,
+            standings_by_competition,
+            head2head_by_match,
+        )
+        valid_indexes = set(range(start_index, start_index + len(batch_matches)))
+        ranked_tips.update(_request_batch_tips(batch_data, api_key, valid_indexes))
+
+    top_tips = sorted(
+        ranked_tips.items(),
+        key=lambda item: (-item[1]["probability"], item[0]),
+    )[:TOP_TIPS_LIMIT]
+    return dict(top_tips)
