@@ -8,8 +8,8 @@ from src.features.data.football_data import (
     fetch_match_head2head,
 )
 from src.features.discord.webhook import send_discord_message
-from src.features.ai_tips import generate_ai_tips
-from src.features.match_formatter import format_matches_message
+from src.features.prompts.ai_tips import generate_ai_tips
+from src.features.discord.match_formatter import format_matches_message
 
 
 def main():
