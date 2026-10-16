@@ -8,8 +8,8 @@ import discord
 from discord import app_commands
 
 from src.features.data.football_data import fetch_competition_matches
-from src.features.ai_tips import generate_ai_tips
-from src.features.match_formatter import format_matches_message
+from src.features.prompts.ai_tips import generate_ai_tips
+from src.features.discord.match_formatter import format_matches_message
 
 
 TIMEZONE = ZoneInfo("Europe/Prague")

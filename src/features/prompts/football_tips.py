@@ -15,8 +15,9 @@ def build_tips_prompt(api_data):
         "vysokou jistotu nikdy neuváděj. Neslibuj výhru a nedoporučuj výši vkladu. "
         "Vrať pouze JSON objekt s polem tips. Každá položka musí mít match_index, market, "
         "pick, confidence, reason, risk a alternative. U tipu bez sázky nastav market na "
-        "'Bez sázky', pick na 'Žádný tip' a alternative na prázdný řetězec.\n"
-        "Následující JSON obsahuje úplná data vrácená dostupnými football-data.org endpointy. "
-        "Využij všechny relevantní informace, ale žádné hodnoty nedoplňuj ani nevymýšlej.\n"
+        "'Bez sázky', pick na 'Žádný tip' a alternative na prázdný řetězec. "
+        "reason a risk napiš stručně, nejvýše ve dvou krátkých větách; alternative nejvýše v jedné.\n"
+        "Následující JSON obsahuje zkrácená relevantní data z dostupných football-data.org endpointů. "
+        "Využij dostupné informace, ale žádné hodnoty nedoplňuj ani nevymýšlej.\n"
         f"Data API: {json.dumps(api_data, ensure_ascii=False, separators=(',', ':'))}"
     )
